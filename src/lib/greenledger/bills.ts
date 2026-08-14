@@ -22,12 +22,13 @@ export type BillRow = {
   created_at: string;
 };
 
-const defaultMockBills: BillRow[] = [
+// Global in-memory array that dynamically stores all uploaded bills in session
+export let inMemoryBillsLedger: BillRow[] = [
   {
     id: "bill-001",
     billing_period: "Mar 2026",
     billing_month: "2026-03-01",
-    file_url: "/Sample_TANGEDCO_Electricity_Bill.pdf",
+    file_url: "/sample-tangedco-bill.pdf",
     file_name: "TANGEDCO_Electricity_March.pdf",
     file_type: "application/pdf",
     file_size: 42500,
@@ -49,7 +50,7 @@ const defaultMockBills: BillRow[] = [
     file_url: "/Sample_IOCL_Diesel_Invoice.pdf",
     file_name: "IOCL_Diesel_Generator_Bill.pdf",
     file_type: "application/pdf",
-    file_size: 14200,
+    file_size: 13900,
     status: "verified",
     electricity_kwh: 36000,
     maximum_demand_kva: 160,
@@ -63,6 +64,15 @@ const defaultMockBills: BillRow[] = [
   }
 ];
 
+export function addLocalBillToLedger(bill: BillRow) {
+  const existingIdx = inMemoryBillsLedger.findIndex(b => b.id === bill.id);
+  if (existingIdx >= 0) {
+    inMemoryBillsLedger[existingIdx] = normalizeBill(bill);
+  } else {
+    inMemoryBillsLedger = [normalizeBill(bill), ...inMemoryBillsLedger];
+  }
+}
+
 export async function fetchBills(): Promise<BillRow[]> {
   try {
     const { data, error } = await supabase
@@ -72,12 +82,12 @@ export async function fetchBills(): Promise<BillRow[]> {
       .order("created_at", { ascending: false });
       
     if (error || !data || data.length === 0) {
-      return defaultMockBills;
+      return inMemoryBillsLedger;
     }
     return ((data as BillRow[] | null) ?? []).map(normalizeBill);
   } catch (err) {
-    console.warn("Supabase offline, using local mock bills ledger:", err);
-    return defaultMockBills;
+    console.warn("Supabase offline notice, returning live in-memory ledger:", err);
+    return inMemoryBillsLedger;
   }
 }
 

@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import { FACILITY_ID } from "@/lib/greenledger/bills";
+import { FACILITY_ID, addLocalBillToLedger } from "@/lib/greenledger/bills";
 
 const EXT_TYPES: Record<string, string> = {
   pdf: "application/pdf",
@@ -199,7 +199,7 @@ async function createLocalMockBill(file: File, mime: string, path: string, uploa
     year: "numeric",
   });
 
-  return {
+  const mockBill = {
     id: `bill-${Date.now()}`,
     facility_id: FACILITY_ID,
     file_url: path,
@@ -217,6 +217,9 @@ async function createLocalMockBill(file: File, mime: string, path: string, uploa
     uploaded_by: uploadedBy,
     created_at: new Date().toISOString()
   };
+
+  addLocalBillToLedger(mockBill);
+  return mockBill;
 }
 
 export async function uploadBillFile(file: File, uploadedBy: string | null) {
@@ -268,6 +271,7 @@ export async function uploadBillFile(file: File, uploadedBy: string | null) {
       return await createLocalMockBill(file, mime, path, uploadedBy);
     }
     
+    addLocalBillToLedger(data);
     return data;
   } catch {
     return await createLocalMockBill(file, mime, path, uploadedBy);
@@ -302,7 +306,7 @@ export async function uploadAndVerifyDemoBill(uploadedBy: string | null) {
       .single();
 
     if (error) {
-      return {
+      const fallback = {
         ...row,
         billing_month: billingMonth,
         billing_period: periodLabel,
@@ -313,10 +317,13 @@ export async function uploadAndVerifyDemoBill(uploadedBy: string | null) {
         verified_by: uploadedBy,
         verified_at: new Date().toISOString(),
       };
+      addLocalBillToLedger(fallback);
+      return fallback;
     }
+    addLocalBillToLedger(data);
     return data;
   } catch {
-    return {
+    const fallback = {
       ...row,
       billing_month: billingMonth,
       billing_period: periodLabel,
@@ -327,5 +334,7 @@ export async function uploadAndVerifyDemoBill(uploadedBy: string | null) {
       verified_by: uploadedBy,
       verified_at: new Date().toISOString(),
     };
+    addLocalBillToLedger(fallback);
+    return fallback;
   }
 }
