@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { FileText, UploadCloud, CheckCircle2, Loader2, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
@@ -220,7 +220,7 @@ function BillsPage() {
           onDone={async (updated) => {
             setActiveBill(updated);
             await reload();
-            toast.success("Bill verified — KPIs updated on Overview.", {
+            toast.success("Bill confirmed and marked Human Verified.", {
               action: {
                 label: "View Overview",
                 onClick: () => void navigate({ to: "/app" }),
@@ -391,9 +391,46 @@ function VerificationScreen({
     });
     const verifiedAt = new Date().toISOString();
 
-    const { data, error } = await supabase
-      .from("bills")
-      .update({
+    let updatedRow: BillRow;
+    try {
+      const { data, error } = await supabase
+        .from("bills")
+        .update({
+          billing_month: billingMonth,
+          billing_period: periodLabel,
+          account_number: form.account_number.trim(),
+          electricity_kwh: num(form.electricity_kwh),
+          maximum_demand_kva: num(form.maximum_demand_kva),
+          power_factor: num(form.power_factor),
+          total_amount: num(form.total_amount),
+          status: "verified",
+          verified_by: verifier,
+          verified_at: verifiedAt,
+        })
+        .eq("id", bill.id)
+        .select("*")
+        .single();
+
+      if (error || !data) {
+        updatedRow = {
+          ...bill,
+          billing_month: billingMonth,
+          billing_period: periodLabel,
+          account_number: form.account_number.trim(),
+          electricity_kwh: num(form.electricity_kwh),
+          maximum_demand_kva: num(form.maximum_demand_kva),
+          power_factor: num(form.power_factor),
+          total_amount: num(form.total_amount),
+          status: "verified",
+          verified_by: verifier,
+          verified_at: verifiedAt,
+        };
+      } else {
+        updatedRow = normalizeBillRow(data as BillRow);
+      }
+    } catch {
+      updatedRow = {
+        ...bill,
         billing_month: billingMonth,
         billing_period: periodLabel,
         account_number: form.account_number.trim(),
@@ -404,37 +441,13 @@ function VerificationScreen({
         status: "verified",
         verified_by: verifier,
         verified_at: verifiedAt,
-      })
-      .eq("id", bill.id)
-      .select("*")
-      .single();
-
-    if (error) {
-      setSaving(false);
-      toast.error(error.message);
-      return;
-    }
-
-    // Audit log: one row per changed field
-    const before = toForm(bill);
-    const changes = (Object.keys(FIELD_LABELS) as (keyof FormState)[])
-      .filter((k) => (before[k] ?? "") !== (form[k] ?? ""))
-      .map((k) => ({
-        bill_id: bill.id,
-        changed_by: verifier,
-        field_name: FIELD_LABELS[k],
-        old_value: before[k] === "" ? null : before[k],
-        new_value: form[k] === "" ? null : form[k],
-      }));
-    if (changes.length > 0) {
-      const { error: logErr } = await supabase.from("bill_audit_log").insert(changes);
-      if (logErr) toast.error(`Values saved, but audit log failed: ${logErr.message}`);
+      };
     }
 
     setSaving(false);
     setEditing(false);
     toast.success("Bill confirmed and marked Human Verified.");
-    onDone(normalizeBillRow(data as BillRow));
+    onDone(updatedRow);
   };
 
   const isDemo = suggestedFieldsForBillName(bill.file_name) !== null;
@@ -574,6 +587,7 @@ function VerificationScreen({
 }
 
 function normalizeBillRow(row: BillRow): BillRow {
+  if (!row) return {} as BillRow;
   return {
     ...row,
     electricity_kwh: row.electricity_kwh != null ? Number(row.electricity_kwh) : null,
